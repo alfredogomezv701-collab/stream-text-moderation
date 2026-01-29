@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream Chat Moderator - Real-time AI Moderation</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0e0e10;
+            color: #efeff1;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #9147ff 0%, #772ce8 100%);
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .header .badge {
+            background: rgba(255,255,255,0.2);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+        }
+
+        .main-container {
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            gap: 20px;
+            padding: 20px;
+            max-width: 1600px;
+            margin: 0 auto;
+            height: calc(100vh - 70px);
+        }
+
+        .dashboard {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+        }
+
+        .stat-card {
+            background: #18181b;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            border: 1px solid #303032;
+        }
+
+        .stat-card .value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stat-card .label {
+            color: #adadb8;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+        }
+
+        .stat-card.total .value { color: #00d4ff; }
+        .stat-card.flagged .value { color: #ffb800; }
+        .stat-card.blocked .value { color: #ff4444; }
+        .stat-card.warned .value { color: #bf94ff; }
+
+        .controls {
+            background: #18181b;
+            border-radius: 10px;
+            padding: 20px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+            border: 1px solid #303032;
+        }
+
+        .controls button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .controls button:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn-play {
+            background: #00d4ff;
+            color: #000;
+        }
+
+        .btn-pause {
+            background: #ffb800;
+            color: #000;
+        }
+
+        .btn-reset {
+            background: #303032;
+            color: #fff;
+        }
+
+        .speed-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-left: auto;
+        }
+
+        .speed-control label {
+            color: #adadb8;
+        }
+
+        .speed-control select {
+            background: #303032;
+            color: #fff;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+
+        .chart-container {
+            background: #18181b;
+            border-radius: 10px;
+            padding: 20px;
+            border: 1px solid #303032;
+            flex: 1;
+            min-height: 150px;
+        }
+
+        .chart-container h3 {
+            margin-bottom: 15px;
+            color: #adadb8;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+        }
+
+        .toxicity-bars {
+            display: flex;
+            align-items: flex-end;
+            gap: 4px;
+            height: 100px;
+            padding: 10px 0;
+        }
+
+        .toxicity-bar {
+            flex: 1;
+            min-width: 8px;
+            max-width: 20px;
+            background: #00d4ff;
+            border-radius: 3px 3px 0 0;
+            transition: height 0.2s ease;
+        }
+
+        .toxicity-bar.medium {
+            background: #ffb800;
+        }
+
+        .toxicity-bar.high {
+            background: #ff4444;
+        }
+
+        .toxicity-bar-placeholder {
+            flex: 1;
+            min-width: 8px;
+            max-width: 20px;
+            height: 4px;
+            background: #303032;
+            border-radius: 3px;
+        }
+
+        .flagged-log {
+            background: #18181b;
+            border-radius: 10px;
+            padding: 20px;
+            border: 1px solid #303032;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+
+        .flagged-log h3 {
+            margin-bottom: 15px;
+            color: #ff4444;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            position: sticky;
+            top: 0;
+            background: #18181b;
+            padding-bottom: 10px;
+        }
+
+        .flagged-item {
+            background: rgba(255, 68, 68, 0.1);
+            border-left: 3px solid #ff4444;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 0 6px 6px 0;
+        }
+
+        .flagged-item.medium {
+            background: rgba(255, 184, 0, 0.1);
+            border-left-color: #ffb800;
+        }
+
+        .flagged-item .username {
+            font-weight: bold;
+            color: #bf94ff;
+        }
+
+        .flagged-item .score {
+            float: right;
+            font-size: 0.8rem;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: #ff4444;
+        }
+
+        .flagged-item.medium .score {
+            background: #ffb800;
+            color: #000;
+        }
+
+        .chat-panel {
+            background: #18181b;
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #303032;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            background: #303032;
+            padding: 15px 20px;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-header .viewer-count {
+            color: #ff4444;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .chat-message {
+            padding: 8px 12px;
+            border-radius: 6px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .chat-message .timestamp {
+            color: #666;
+            font-size: 0.75rem;
+            margin-right: 8px;
+        }
+
+        .chat-message .username {
+            font-weight: bold;
+            margin-right: 8px;
+        }
+
+        .chat-message.low {
+            background: rgba(0, 212, 255, 0.05);
+        }
+
+        .chat-message.low .username {
+            color: #00d4ff;
+        }
+
+        .chat-message.medium {
+            background: rgba(255, 184, 0, 0.15);
+            border: 1px solid rgba(255, 184, 0, 0.3);
+        }
+
+        .chat-message.medium .username {
+            color: #ffb800;
+        }
+
+        .chat-message.medium::before {
+            content: "⚠️ ";
+        }
+
+        .chat-message.high {
+            background: rgba(255, 68, 68, 0.2);
+            border: 1px solid rgba(255, 68, 68, 0.4);
+            text-decoration: line-through;
+            opacity: 0.6;
+        }
+
+        .chat-message.high .username {
+            color: #ff4444;
+        }
+
+        .chat-message.high::before {
+            content: "🚫 BLOCKED: ";
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .chat-message.user-message {
+            background: rgba(145, 71, 255, 0.2);
+            border: 1px solid rgba(145, 71, 255, 0.4);
+        }
+
+        .chat-message.user-message .username {
+            color: #bf94ff;
+        }
+
+        .chat-input-container {
+            padding: 15px;
+            background: #18181b;
+            border-bottom: 1px solid #303032;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .chat-input-wrapper {
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input-wrapper input {
+            flex: 1;
+            background: #303032;
+            border: none;
+            padding: 12px 15px;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 1rem;
+        }
+
+        .chat-input-wrapper input:focus {
+            outline: 2px solid #9147ff;
+        }
+
+        .chat-input-wrapper button {
+            background: #9147ff;
+            color: #fff;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .chat-input-wrapper button:hover {
+            background: #772ce8;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+            background: #666;
+        }
+
+        .status-indicator.live {
+            background: #ff4444;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .legend {
+            display: flex;
+            gap: 20px;
+            padding: 10px 15px;
+            background: #0e0e10;
+            border-top: 1px solid #303032;
+            font-size: 0.85rem;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+
+        .legend-dot.safe { background: #00d4ff; }
+        .legend-dot.warning { background: #ffb800; }
+        .legend-dot.blocked { background: #ff4444; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>
+            <span class="status-indicator" id="statusIndicator"></span>
+            Stream Chat Moderator
+            <span class="badge">AI-Powered</span>
+        </h1>
+        <div>Real-time Toxicity Detection using Hugging Face API</div>
+    </div>
+
+    <div class="main-container">
+        <div class="dashboard">
+            <div class="stats-grid">
+                <div class="stat-card total">
+                    <div class="value" id="totalMessages">0</div>
+                    <div class="label">Total Messages</div>
+                </div>
+                <div class="stat-card flagged">
+                    <div class="value" id="flaggedMessages">0</div>
+                    <div class="label">Flagged</div>
+                </div>
+                <div class="stat-card blocked">
+                    <div class="value" id="blockedMessages">0</div>
+                    <div class="label">Blocked</div>
+                </div>
+                <div class="stat-card warned">
+                    <div class="value" id="warnedUsers">0</div>
+                    <div class="label">Users Warned</div>
+                </div>
+            </div>
+
+            <div class="controls">
+                <button class="btn-play" id="playBtn" onclick="startReplay()">
+                    ▶ Play
+                </button>
+                <button class="btn-pause" id="pauseBtn" onclick="pauseReplay()" style="display:none;">
+                    ⏸ Pause
+                </button>
+                <button class="btn-reset" onclick="resetReplay()">
+                    ↺ Reset
+                </button>
+                <div class="speed-control">
+                    <label>Speed:</label>
+                    <select id="speedSelect" onchange="setSpeed(this.value)">
+                        <option value="0.5">0.5x</option>
+                        <option value="1" selected>1x</option>
+                        <option value="2">2x</option>
+                        <option value="3">3x</option>
+                        <option value="5">5x</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <h3>Toxicity Timeline (Last 30 Messages)</h3>
+                <div class="toxicity-bars" id="toxicityBars">
+                    <!-- Bars will be added dynamically -->
+                </div>
+            </div>
+
+            <div class="flagged-log" id="flaggedLog">
+                <h3>🚨 Flagged & Blocked Messages</h3>
+                <div id="flaggedList">
+                    <p style="color: #666; text-align: center;">No flagged messages yet</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="chat-panel">
+            <div class="chat-header">
+                <span>Stream Chat</span>
+                <span class="viewer-count">
+                    <span class="status-indicator" id="chatStatusIndicator"></span>
+                    <span id="messageCount">0</span> messages
+                </span>
+            </div>
+            <div class="chat-input-container">
+                <div class="chat-input-wrapper">
+                    <input type="text" id="messageInput" placeholder="Type a message to test moderation..." onkeypress="handleKeyPress(event)">
+                    <button onclick="sendMessage()">Chat</button>
+                </div>
+            </div>
+            <div class="chat-messages" id="chatMessages">
+                <p style="color: #666; text-align: center; margin-top: 50%;">
+                    Press Play to start the chat replay<br>
+                    <small>Or type your own message above</small>
+                </p>
+            </div>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-dot safe"></div>
+                    <span>Safe</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-dot warning"></div>
+                    <span>Flagged</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-dot blocked"></div>
+                    <span>Blocked</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let isPlaying = false;
+        let firstMessage = true;
+
+        // Update toxicity bars visualization
+        function updateToxicityBars(timeline) {
+            const container = document.getElementById('toxicityBars');
+            const maxBars = 30;
+
+            // Take last 30 items
+            const data = timeline.slice(-maxBars);
+
+            // Build HTML for bars
+            let html = '';
+            for (let i = 0; i < maxBars; i++) {
+                if (i < data.length) {
+                    const score = data[i].score;
+                    const height = Math.max(4, score * 100);
+                    let levelClass = '';
+                    if (score > 0.7) levelClass = 'high';
+                    else if (score > 0.4) levelClass = 'medium';
+                    html += `<div class="toxicity-bar ${levelClass}" style="height: ${height}px;" title="${(score * 100).toFixed(1)}%"></div>`;
+                } else {
+                    html += `<div class="toxicity-bar-placeholder"></div>`;
+                }
+            }
+            container.innerHTML = html;
+        }
+
+        // Socket event handlers
+        socket.on('connect', () => {
+            console.log('Connected to server');
+        });
+
+        socket.on('new_message', (data) => {
+            addChatMessage(data);
+            if (data.action !== 'allowed') {
+                addFlaggedMessage(data);
+            }
+        });
+
+        socket.on('stats_update', (stats) => {
+            document.getElementById('totalMessages').textContent = stats.total;
+            document.getElementById('flaggedMessages').textContent = stats.flagged;
+            document.getElementById('blockedMessages').textContent = stats.blocked;
+            document.getElementById('warnedUsers').textContent = stats.warned_users;
+            document.getElementById('messageCount').textContent = stats.total;
+
+            // Update toxicity bars
+            updateToxicityBars(stats.timeline);
+        });
+
+        socket.on('replay_started', (data) => {
+            isPlaying = true;
+            updatePlayButton();
+            document.getElementById('statusIndicator').classList.add('live');
+            document.getElementById('chatStatusIndicator').classList.add('live');
+        });
+
+        socket.on('replay_paused', () => {
+            isPlaying = false;
+            updatePlayButton();
+            document.getElementById('statusIndicator').classList.remove('live');
+            document.getElementById('chatStatusIndicator').classList.remove('live');
+        });
+
+        socket.on('replay_ended', () => {
+            isPlaying = false;
+            updatePlayButton();
+            document.getElementById('statusIndicator').classList.remove('live');
+            document.getElementById('chatStatusIndicator').classList.remove('live');
+        });
+
+        socket.on('replay_reset', () => {
+            document.getElementById('chatMessages').innerHTML = `
+                <p style="color: #666; text-align: center; margin-top: 50%;">
+                    Press Play to start the chat replay<br>
+                    <small>Or type your own message above</small>
+                </p>
+            `;
+            document.getElementById('flaggedList').innerHTML = `
+                <p style="color: #666; text-align: center;">No flagged messages yet</p>
+            `;
+            firstMessage = true;
+            updateToxicityBars([]);
+        });
+
+        function addChatMessage(data) {
+            const container = document.getElementById('chatMessages');
+
+            if (firstMessage) {
+                container.innerHTML = '';
+                firstMessage = false;
+            }
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chat-message ${data.toxicity_level}`;
+            if (!data.is_historical) {
+                messageDiv.classList.add('user-message');
+            }
+
+            messageDiv.innerHTML = `
+                <span class="timestamp">${data.timestamp}</span>
+                <span class="username">${data.username}:</span>
+                <span class="text">${escapeHtml(data.message)}</span>
+            `;
+
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function addFlaggedMessage(data) {
+            const container = document.getElementById('flaggedList');
+
+            // Remove placeholder text if present
+            if (container.querySelector('p')) {
+                container.innerHTML = '';
+            }
+
+            const item = document.createElement('div');
+            item.className = `flagged-item ${data.toxicity_level === 'medium' ? 'medium' : ''}`;
+            item.innerHTML = `
+                <span class="score">${(data.toxicity_score * 100).toFixed(1)}%</span>
+                <span class="username">${data.username}</span>
+                <div style="margin-top: 5px; font-size: 0.9rem;">${escapeHtml(data.message)}</div>
+            `;
+
+            container.insertBefore(item, container.firstChild);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function updatePlayButton() {
+            document.getElementById('playBtn').style.display = isPlaying ? 'none' : 'flex';
+            document.getElementById('pauseBtn').style.display = isPlaying ? 'flex' : 'none';
+        }
+
+        function startReplay() {
+            socket.emit('start_replay');
+        }
+
+        function pauseReplay() {
+            socket.emit('pause_replay');
+        }
+
+        function resetReplay() {
+            socket.emit('reset_replay');
+        }
+
+        function setSpeed(speed) {
+            socket.emit('set_speed', { speed: parseFloat(speed) });
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            if (message) {
+                socket.emit('user_message', {
+                    username: 'You',
+                    message: message
+                });
+                input.value = '';
+            }
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        // Initialize toxicity bars with empty state
+        updateToxicityBars([]);
+    </script>
+</body>
+</html>
